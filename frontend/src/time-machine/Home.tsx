@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import GithubIcon from "@rsuite/icons/legacy/Github";
+import WechatIcon from "@rsuite/icons/legacy/Wechat";
 import {
   Button,
   Breadcrumb,
@@ -187,6 +188,22 @@ function Home() {
                 >
                   <GithubIcon style={{ fontSize: "2em" }} />
                   {t("login-main-github")}
+                </Button>
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <Button
+                  onClick={() => {
+                    navigate("/login/wechat", { replace: false });
+                  }}
+                >
+                  <WechatIcon style={{ fontSize: "2em" }} />
+                  {t("login-main-wechat")}
                 </Button>
               </div>
             </>
