@@ -23,6 +23,10 @@ pub struct Model {
     pub password: Option<String>,
     #[sea_orm(column_type = "Text")]
     pub contact_email: String,
+    #[sea_orm(column_type = "Text", nullable, unique)]
+    pub wechat_openid: Option<String>,
+    #[sea_orm(column_type = "Text", nullable, unique)]
+    pub wechat_unionid: Option<String>,
     #[sea_orm(nullable, unique, indexed)]
     pub github_uid: Option<i64>,
     pub language: Language,

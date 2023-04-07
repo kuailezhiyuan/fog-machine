@@ -44,6 +44,12 @@ pub struct Config {
     #[envconfig(from = "GITHUB_CLIENT_SECRET")]
     pub github_client_secret: String,
 
+    #[envconfig(from = "WECHAT_APPID")]
+    pub wechat_appid: String,
+
+    #[envconfig(from = "WECHAT_SECRET")]
+    pub wechat_secret: String,
+
     #[envconfig(from = "JWT_SECRET")]
     pub jwt_secret: String,
 
@@ -65,6 +71,7 @@ pub struct ServerState {
     pub download_items:
         Mutex<endorphin::HashMap<String, misc_handler::DownloadItem, endorphin::policy::TTLPolicy>>,
     pub uploaded_items: Mutex<endorphin::HashMap<String, Vec<u8>, endorphin::policy::TTLPolicy>>,
+    pub wechat_login_items: Mutex<endorphin::HashMap<String, String, endorphin::policy::TTLPolicy>>,
 }
 impl ServerState {
     pub fn from_config(config: Config) -> Self {
@@ -83,6 +90,9 @@ impl ServerState {
                 endorphin::HashMap::new(endorphin::policy::TTLPolicy::new()),
             ),
             uploaded_items: Mutex::new(
+                endorphin::HashMap::new(endorphin::policy::TTLPolicy::new()),
+            ),
+            wechat_login_items: Mutex::new(
                 endorphin::HashMap::new(endorphin::policy::TTLPolicy::new()),
             ),
         }

@@ -1,10 +1,13 @@
 use crate::pool::Db;
 use crate::user_handler::PendingRegistration::Github;
+use crate::user_handler::PendingRegistration::Wechat;
 use crate::utils;
+use crate::utils::json_decode;
 use crate::{APIResponse, InternalError, ServerState};
 use anyhow::anyhow;
 use entity::sea_orm;
 use jwt::SignWithKey;
+use rocket::futures::future::ok;
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::Redirect;
@@ -101,7 +104,13 @@ impl<'r> FromRequest<'r> for User {
 
 #[derive(Clone)]
 pub enum PendingRegistration {
-    Github { github_uid: i64 },
+    Github {
+        github_uid: i64,
+    },
+    Wechat {
+        wechat_openid: String,
+        wechat_unionid: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -245,6 +254,32 @@ async fn sso(
                 password: Set(None),
                 contact_email: Set(contact_email),
                 github_uid: Set(Some(github_uid)),
+                wechat_openid: Set(None),
+                wechat_unionid: Set(None),
+                language: Set(data.language),
+                created_at: Set(chrono::offset::Utc::now()),
+                updated_at: Set(chrono::offset::Utc::now()),
+            };
+            // we have unique contrain on `github_uid` and I don't think we need a
+            // proper error message here
+            let new_user = new_user.insert(db).await?;
+            Ok((
+                Status::Ok,
+                json!({"token": generate_user_token(server_state, new_user.id)}),
+            ))
+        }
+        Wechat {
+            wechat_openid,
+            wechat_unionid,
+        } => {
+            let new_user = entity::user::ActiveModel {
+                id: NotSet,
+                email: Set(None),
+                password: Set(None),
+                contact_email: Set(contact_email),
+                github_uid: Set(None),
+                wechat_openid: Set(Some(wechat_openid)),
+                wechat_unionid: Set(Some(wechat_unionid)),
                 language: Set(data.language),
                 created_at: Set(chrono::offset::Utc::now()),
                 updated_at: Set(chrono::offset::Utc::now()),
@@ -275,6 +310,139 @@ async fn user(conn: Connection<'_, Db>, user: User) -> APIResponse {
     ))
 }
 
+#[get("/sso/wechat/qrcode")]
+async fn sso_wechat_qrcode(server_state: &rocket::State<ServerState>) -> APIResponse {
+    let client = reqwest::Client::builder().user_agent("rust").build()?;
+    let res = client
+        .post("https://api.weixin.qq.com/cgi-bin/stable_token")
+        .header("Accept", "application/json")
+        .json(&json!({
+            "appid": server_state.config.wechat_appid,
+            "secret": server_state.config.wechat_secret,
+            "grant_type": "client_credential"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<serde_json::Value>()
+        .await?;
+    let access_token = match res["access_token"].as_str() {
+        Some(access_token) => access_token,
+        None => {
+            return match res["error"].as_str() {
+                Some("bad_verification_code") => Ok((
+                    Status::Unauthorized,
+                    json!({"error": "bad_verification_code"}),
+                )),
+                Some(_) | None => Err(InternalError(anyhow!(
+                    "Unexpected error while getting access_token: {}",
+                    res
+                ))),
+            }
+        }
+    };
+    let url = format!(
+        "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={}",
+        access_token
+    );
+    let mut wechat_login_items = server_state.wechat_login_items.lock().unwrap();
+    let wechat_login_token = utils::random_token(|token| !wechat_login_items.contains_key(token));
+    wechat_login_items.insert(
+        wechat_login_token.clone(),
+        "".to_string(),
+        Duration::from_secs(20 * 60),
+    );
+    let bytes = client
+        .post(url)
+        .header("Accept", "application/json")
+        .json(&json!({
+            "scene": wechat_login_token,
+            "page": "pages/activity/myActivity/activityPoints",
+            "width": "430"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    Ok((Status::Ok, json!({"wechat_login_token": wechat_login_token, "img": format!("data:image/png;base64,{}",base64::encode(&bytes))})))
+}
+
+#[derive(Deserialize)]
+struct WechatSSOData {
+    code: String,
+    uuid: String,
+}
+
+#[post("/sso/wechat", data = "<data>")]
+async fn sso_wechat(
+    conn: Connection<'_, Db>,
+    server_state: &rocket::State<ServerState>,
+    data: Json<WechatSSOData>,
+) -> APIResponse {
+    let client = reqwest::Client::builder().user_agent("rust").build()?;
+    let url = format!("{api}/sns/jscode2session?appid={appid}&secret={secret}&js_code={code}&grant_type=authorization_code",
+                      api = "https://api.weixin.qq.com",
+                      appid = server_state.config.wechat_appid,
+                      code = data.code,
+                      secret = server_state.config.wechat_secret
+    );
+
+    let res = client.get(url).send().await?.text().await?;
+    println!("res:{}", &res);
+    match json_decode(&res) {
+        Ok(data) => {
+            if data.get("openid").is_some() {
+                let wechat_openid: String = data["openid"].to_string();
+                let db = conn.into_inner();
+                let user = entity::user::Entity::find()
+                    .filter(entity::user::Column::WechatOpenid.eq(wechat_openid.as_str()))
+                    .one(db)
+                    .await?;
+                match user {
+                    Some(user) => Ok((
+                        Status::Ok,
+                        json!({"login": true, "token": generate_user_token(server_state, user.id)}),
+                    )),
+                    None => {
+                        let wechat_unionid: String = data["unionid"].to_string();
+                        let mut pending_registrations =
+                            server_state.pending_registrations.lock().unwrap();
+                        let registration_token =
+                            utils::random_token(|token| !pending_registrations.contains_key(token));
+                        pending_registrations.insert(
+                            registration_token.clone(),
+                            Wechat {
+                                wechat_openid,
+                                wechat_unionid,
+                            },
+                            Duration::from_secs(20 * 60),
+                        );
+                        Ok((
+                            Status::Ok,
+                            json!({"login": false, "default_email":"" , "registration_token": registration_token }),
+                        ))
+                    }
+                }
+            } else {
+                Ok((
+                    Status::Unauthorized,
+                    json!({"error": "bad_verification_code"}),
+                ))
+            }
+        }
+        Err(err) => Ok((
+            Status::Unauthorized,
+            json!({"error": "bad_verification_code"}),
+        )),
+    }
+}
+
 pub fn routes() -> Vec<rocket::Route> {
-    routes![sso_github, sso_github_redirect, sso, user]
+    routes![
+        sso_github,
+        sso_github_redirect,
+        sso,
+        user,
+        sso_wechat,
+        sso_wechat_qrcode
+    ]
 }
