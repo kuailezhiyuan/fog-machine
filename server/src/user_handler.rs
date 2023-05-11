@@ -344,13 +344,19 @@ async fn sso_wechat_qrcode(server_state: &rocket::State<ServerState>) -> APIResp
         "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token={}",
         access_token
     );
-    let mut wechat_login_items = server_state.wechat_login_items.lock().unwrap();
-    let wechat_login_token = utils::random_token(|token| !wechat_login_items.contains_key(token));
-    wechat_login_items.insert(
-        wechat_login_token.clone(),
-        "".to_string(),
-        Duration::from_secs(20 * 60),
-    );
+    let wechat_login_token = {
+        let mut wechat_login_items: std::sync::MutexGuard<
+            endorphin::HashMap<String, String, endorphin::policy::TTLPolicy>,
+        > = server_state.wechat_login_items.lock().unwrap();
+        let wechat_login_token =
+            utils::random_token(|token| !wechat_login_items.contains_key(token));
+        wechat_login_items.insert(
+            wechat_login_token.clone(),
+            "".to_string(),
+            Duration::from_secs(20 * 60),
+        );
+        wechat_login_token
+    };
     let bytes = client
         .post(url)
         .header("Accept", "application/json")
@@ -363,7 +369,10 @@ async fn sso_wechat_qrcode(server_state: &rocket::State<ServerState>) -> APIResp
         .error_for_status()?
         .bytes()
         .await?;
-    Ok((Status::Ok, json!({"wechat_login_token": wechat_login_token, "img": format!("data:image/png;base64,{}",base64::encode(&bytes))})))
+    Ok((
+        Status::Ok,
+        json!({"wechat_login_token": wechat_login_token, "img": format!("data:image/png;base64,{}",base64::encode(&bytes))}),
+    ))
 }
 
 #[derive(Deserialize)]
