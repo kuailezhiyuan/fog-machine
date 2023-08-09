@@ -3,59 +3,148 @@ import { Popover, Tab, Transition } from "@headlessui/react";
 import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/solid";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
-import { MapRenderer } from "./utils/MapRenderer";
+import { MapController } from "./utils/MapController";
 import Import from "./Import";
 
-function MapTap(props: { mapRenderer: MapRenderer }): JSX.Element {
+function MapTap(props: { mapController: MapController }): JSX.Element {
   const { t } = useTranslation();
-  const mapRenderer = props.mapRenderer;
+  const mapController = props.mapController;
   const mapStyles = ["standard", "satellite", "hybrid", "none"];
+  const mapProjections = ["globe", "mercator"];
+  const fogConcentrations = ["low", "medium", "high"];
 
   return (
-    <div className="w-full pt-4 grid lg:grid-cols-2">
-      <Tab.Group
-        onChange={(index) => {
-          const style = mapStyles[index];
-          mapRenderer.setMapStyle(
-            style as "standard" | "satellite" | "hybrid" | "none"
-          );
-        }}
-        defaultIndex={mapStyles.indexOf(mapRenderer.getMapStyle())}
-      >
-        <Tab.List className="flex p-1 space-x-1 bg-gray-300 rounded-xl">
-          {[
-            t("map-type-standard"),
-            t("map-type-satellite"),
-            t("map-type-hybrid"),
-            t("map-type-none"),
-          ].map((category) => (
-            <Tab
-              key={category}
-              className={({ selected }) => {
-                return (
-                  "w-full py-1 text-sm leading-5 font-medium text-grey-500 rounded-lg focus:outline-none" +
-                  (selected ? " bg-white" : " hover:bg-gray-200")
-                );
-              }}
-            >
-              {category}
-            </Tab>
-          ))}
-        </Tab.List>
-      </Tab.Group>
-    </div>
+    <>
+      <div className="p-4 bg-gray-50">
+        <span className="flex items-center">
+          <span className="text-sm font-medium text-gray-900">
+            {t("map-type")}
+          </span>
+        </span>
+        <div className="w-full pt-4 grid lg:grid-cols-2">
+          <Tab.Group
+            onChange={(index) => {
+              const style = mapStyles[index];
+              mapController.setMapStyle(
+                style as "standard" | "satellite" | "hybrid" | "none"
+              );
+            }}
+            defaultIndex={mapStyles.indexOf(mapController.getMapStyle())}
+          >
+            <Tab.List className="flex p-1 space-x-1 bg-gray-300 rounded-xl">
+              {[
+                t("map-type-standard"),
+                t("map-type-satellite"),
+                t("map-type-hybrid"),
+                t("map-type-none"),
+              ].map((category) => (
+                <Tab
+                  key={category}
+                  className={({ selected }) => {
+                    return (
+                      "w-full py-1 text-sm leading-5 font-medium text-grey-500 rounded-lg focus:outline-none" +
+                      (selected ? " bg-white" : " hover:bg-gray-200")
+                    );
+                  }}
+                >
+                  {category}
+                </Tab>
+              ))}
+            </Tab.List>
+          </Tab.Group>
+        </div>
+      </div>
+      <div className="p-4 bg-gray-50">
+        <span className="flex items-center">
+          <span className="text-sm font-medium text-gray-900">
+            {t("fog-concentration")}
+          </span>
+        </span>
+        <div className="w-full pt-4 grid lg:grid-cols-2">
+          <Tab.Group
+            onChange={(index) => {
+              const fogConcentration = fogConcentrations[index];
+              mapController.setFogConcentration(
+                fogConcentration as "low" | "medium" | "high"
+              );
+            }}
+            defaultIndex={fogConcentrations.indexOf(
+              mapController.getFogConcentration()
+            )}
+          >
+            <Tab.List className="flex p-1 space-x-1 bg-gray-300 rounded-xl">
+              {[
+                t("fog-concentration-low"),
+                t("fog-concentration-medium"),
+                t("fog-concentration-high"),
+              ].map((category) => (
+                <Tab
+                  key={category}
+                  className={({ selected }) => {
+                    return (
+                      "w-full py-1 text-sm leading-5 font-medium text-grey-500 rounded-lg focus:outline-none" +
+                      (selected ? " bg-white" : " hover:bg-gray-200")
+                    );
+                  }}
+                >
+                  {category}
+                </Tab>
+              ))}
+            </Tab.List>
+          </Tab.Group>
+        </div>
+      </div>
+      <div className="p-4 bg-gray-50">
+        <span className="flex items-center">
+          <span className="text-sm font-medium text-gray-900">
+            {t("map-projection")}
+          </span>
+        </span>
+        <div className="w-full pt-4 grid lg:grid-cols-2">
+          <Tab.Group
+            onChange={(index) => {
+              const mapProjection = mapProjections[index];
+              mapController.setMapProjection(
+                mapProjection as "globe" | "mercator"
+              );
+            }}
+            defaultIndex={mapProjections.indexOf(
+              mapController.getMapProjection()
+            )}
+          >
+            <Tab.List className="flex p-1 space-x-1 bg-gray-300 rounded-xl">
+              {[t("map-projection-globe"), t("map-projection-mercator")].map(
+                (category) => (
+                  <Tab
+                    key={category}
+                    className={({ selected }) => {
+                      return (
+                        "w-full py-1 text-sm leading-5 font-medium text-grey-500 rounded-lg focus:outline-none" +
+                        (selected ? " bg-white" : " hover:bg-gray-200")
+                      );
+                    }}
+                  >
+                    {category}
+                  </Tab>
+                )
+              )}
+            </Tab.List>
+          </Tab.Group>
+        </div>
+      </div>
+    </>
   );
 }
 
 type Props = {
-  mapRenderer: MapRenderer;
+  mapController: MapController;
   msgboxShow(title: string, msg: string): void;
   mode: "editor" | "viewer";
 };
 
 export default function MainMenu(props: Props): JSX.Element {
   const { t, i18n } = useTranslation();
-  const mapRenderer = props.mapRenderer;
+  const mapController = props.mapController;
 
   const [importDialog, setImportDialog] = useState(false);
 
@@ -77,7 +166,7 @@ export default function MainMenu(props: Props): JSX.Element {
             description: t("export-description"),
             action: async () => {
               // TODO: seems pretty fast, but we should consider handle this async properly
-              const blob = await mapRenderer.fogMap.exportArchive();
+              const blob = await mapController.fogMap.exportArchive();
               if (blob) {
                 const name = "Sync.zip";
                 const blobUrl = URL.createObjectURL(blob);
@@ -137,7 +226,7 @@ export default function MainMenu(props: Props): JSX.Element {
   return (
     <>
       <Import
-        mapRenderer={mapRenderer}
+        mapController={mapController}
         isOpen={importDialog}
         setIsOpen={setImportDialog}
         msgboxShow={props.msgboxShow}
@@ -200,14 +289,7 @@ export default function MainMenu(props: Props): JSX.Element {
                         ))}
                       </div>
 
-                      <div className="p-4 bg-gray-50">
-                        <span className="flex items-center">
-                          <span className="text-sm font-medium text-gray-900">
-                            {t("map-type")}
-                          </span>
-                        </span>
-                        <MapTap mapRenderer={mapRenderer} />
-                      </div>
+                      <MapTap mapController={mapController} />
 
                       <div className="p-4 bg-gray-50">
                         <span className="flex items-center">

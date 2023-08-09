@@ -15,8 +15,11 @@ import {
   Message,
   useToaster,
   Notification,
+  Table,
+  Whisper,
+  Tooltip,
 } from "rsuite";
-import Api, { SnapshotTask } from "./Api";
+import Api, { SnapshotTask, TaskLog, TaskLogList } from "./Api";
 import PauseIcon from "@rsuite/icons/legacy/Pause";
 import FileTextIcon from "@rsuite/icons/legacy/FileText";
 import PlayIcon from "@rsuite/icons/legacy/Play";
@@ -26,8 +29,12 @@ import CloseOutlineIcon from "@rsuite/icons/CloseOutline";
 import EditIcon from "@rsuite/icons/Edit";
 import AddOutlineIcon from "@rsuite/icons/AddOutline";
 import HelpOutlineIcon from "@rsuite/icons/HelpOutline";
+import CheckRoundIcon from "@rsuite/icons/CheckRound";
+import WarningRoundIcon from "@rsuite/icons/WarningRound";
 import DashboardSnapshot from "./DashboardSnapshot";
 import { useTranslation } from "react-i18next";
+
+const { Column, HeaderCell, Cell } = Table;
 
 type EditModelState = {
   mode: "edit" | "create";
@@ -40,14 +47,20 @@ const MainStatusPanelContent: React.FC<{
   setIsLoading: (isLoading: boolean) => void;
   snapshotTask: SnapshotTask | null;
   setOpenEditModel: (isOpen: boolean) => void;
+  setOpenLogModel: (isOpen: boolean) => void;
   setEditModelState: (state: EditModelState) => void;
+  setIsLogListLoading: (isLoading: boolean) => void;
+  setLogList: (state: TaskLogList | null) => void;
   loadData: () => Promise<void>;
 }> = ({
   isLoading,
   setIsLoading,
   snapshotTask,
   setOpenEditModel,
+  setOpenLogModel,
   setEditModelState,
+  setIsLogListLoading,
+  setLogList,
   loadData,
 }) => {
   const { t } = useTranslation();
@@ -155,7 +168,22 @@ const MainStatusPanelContent: React.FC<{
                     {t("sync-button-start")}
                   </IconButton>
                 )}
-                <IconButton disabled icon={<FileTextIcon />} placement="left">
+                <IconButton
+                  icon={<FileTextIcon />}
+                  placement="left"
+                  onClick={async () => {
+                    setLogList(null);
+                    setOpenLogModel(true);
+                    setIsLogListLoading(true);
+                    const result = await Api.listTaskLog();
+                    if (result.ok) {
+                      setLogList(result.ok);
+                    } else {
+                      console.log(result);
+                    }
+                    setIsLogListLoading(false);
+                  }}
+                >
                   {t("sync-button-view-Log")}
                 </IconButton>
                 <IconButton
@@ -185,26 +213,40 @@ function DashboardMain() {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [snapshotTask, setSnapshotTask] = useState<SnapshotTask | null>(null);
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (showProgress = true) => {
+    if (showProgress) {
+      setIsLoading(true);
+    }
     const result = await Api.getSnapshotTask();
     if (result.ok) {
       setSnapshotTask(result.ok == "none" ? null : result.ok);
     } else {
       console.log(result);
     }
-    setIsLoading(false);
+    if (showProgress) {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    const reloadTimer = setInterval(() => {
+      loadData(false);
+    }, 20 * 1000);
+    return () => clearInterval(reloadTimer);
   }, []);
 
   const [editModelState, setEditModelState] = useState<EditModelState>({
     mode: "create",
   });
 
+  const [logList, setLogList] = useState<TaskLogList | null>(null);
+
   const [openEditModel, setOpenEditModel] = useState(false);
+
+  const [openLogModel, setOpenLogModel] = useState(false);
+
+  const [isLogListLoading, setIsLogListLoading] = useState(false);
 
   const allowedInterval = [
     6 * 60,
@@ -232,12 +274,7 @@ function DashboardMain() {
   const errorToaster = useToaster();
   const errorNotification = (msg: string) => {
     return (
-      <Notification
-        type={"error"}
-        header={t("error-title")}
-        closable
-        duration={0}
-      >
+      <Notification type={"error"} header={t("error-title")} closable>
         {msg}
       </Notification>
     );
@@ -295,18 +332,19 @@ function DashboardMain() {
         if (res.error == "invalid_share") {
           errorToaster.push(errorNotification(t("error-data-share-link")), {
             placement: "topCenter",
+            duration: 0,
           });
         } else if (res.error == "invalid_folder_structure") {
           errorToaster.push(
             errorNotification(t("error-data-folder-structure")),
-            { placement: "topCenter" }
+            { placement: "topCenter", duration: 0 }
           );
         } else {
           errorToaster.push(
             errorNotification(
               t("error-unknown") + ": " + String(res.unknownError)
             ),
-            { placement: "topCenter" }
+            { placement: "topCenter", duration: 0 }
           );
         }
       }
@@ -323,7 +361,7 @@ function DashboardMain() {
     } else {
       errorToaster.push(
         errorNotification(t("error-unknown") + ": " + String(res.unknownError)),
-        { placement: "topCenter" }
+        { placement: "topCenter", duration: 0 }
       );
     }
     setEditButtonLoading(false);
@@ -339,7 +377,10 @@ function DashboardMain() {
               setIsLoading,
               snapshotTask,
               setOpenEditModel,
+              setOpenLogModel,
               setEditModelState,
+              setIsLogListLoading,
+              setLogList,
               loadData,
             }}
           />
@@ -437,6 +478,90 @@ function DashboardMain() {
               </Form.Group>
             </Modal.Footer>
           </Form>
+        </Modal.Body>
+      </Modal>
+
+      <Modal
+        open={openLogModel}
+        onClose={() => {
+          setOpenLogModel(false);
+        }}
+        backdrop={"static"}
+        size="lg"
+        overflow={true}
+      >
+        <Modal.Header>
+          <Modal.Title>{t("sync-button-view-Log")}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {/* TODO On Firefox, the row height will become very high, 
+          maybe it's caused by wordWrap, but wordWrap works very nice here */}
+          <Table
+            wordWrap="break-word"
+            autoHeight={true}
+            hover={false}
+            data={logList ? logList.snapshotLogs : undefined}
+            id="logTable"
+            loading={isLogListLoading}
+          >
+            <Column flexGrow={5} align="center" fixed>
+              <HeaderCell>{t("log-list-timestamp")}</HeaderCell>
+              <Cell>
+                {(rawData) => {
+                  const logs = rawData as TaskLog;
+                  return (
+                    <div>{moment(logs.timestamp).format("YYYY-MM-DD")}</div>
+                  );
+                }}
+              </Cell>
+            </Column>
+
+            <Column flexGrow={4} align="center">
+              <HeaderCell>{t("log-list-snapshot-id")}</HeaderCell>
+              <Cell>
+                {(rawData) => {
+                  const logs = rawData as TaskLog;
+                  return <div>{logs.snapshotId ? logs.snapshotId : "-"}</div>;
+                }}
+              </Cell>
+            </Column>
+
+            <Column flexGrow={4} align="center">
+              <HeaderCell>{t("log-list-succeed")}</HeaderCell>
+              <Cell>
+                {(rawData) => {
+                  const logs = rawData as TaskLog;
+                  return (
+                    <div>
+                      {logs.succeed ? (
+                        <CheckRoundIcon style={{ color: "#378f17" }} />
+                      ) : (
+                        <WarningRoundIcon style={{ color: "#eb3626" }} />
+                      )}
+                    </div>
+                  );
+                }}
+              </Cell>
+            </Column>
+
+            <Column flexGrow={18}>
+              <HeaderCell>{t("log-list-details")}</HeaderCell>
+              <Cell>
+                {(rawData) => {
+                  const logs = rawData as TaskLog;
+                  return (
+                    <Whisper
+                      placement="bottom"
+                      trigger="hover"
+                      speaker={<Tooltip>{logs.details}</Tooltip>}
+                    >
+                      <div>{logs.details}</div>
+                    </Whisper>
+                  );
+                }}
+              </Cell>
+            </Column>
+          </Table>
         </Modal.Body>
       </Modal>
     </>

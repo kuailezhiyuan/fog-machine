@@ -58,6 +58,19 @@ export type SnapshotList = {
   snapshots: Snapshot[];
 };
 
+export type TaskLog = {
+  id: number;
+  details: string | null;
+  snapshotId: number | null;
+  succeed: boolean;
+  timestamp: Date;
+  userId: number;
+};
+
+export type TaskLogList = {
+  snapshotLogs: TaskLog[];
+};
+
 export type SnapshotUploadResult = {
   id: number;
   fileCount: number;
@@ -216,6 +229,14 @@ export default class Api {
     return result;
   }
 
+  public static async listTaskLog(): Promise<Result<TaskLogList>> {
+    const result = await this.requestApi("snapshot_log", "get", true);
+    if (result.ok) {
+      result.ok = toCamel(result.ok);
+    }
+    return result;
+  }
+
   public static async deleteSnapshot(id: number): Promise<Result<"ok">> {
     const result = await this.requestApi(
       "snapshot/" + String(id),
@@ -228,12 +249,32 @@ export default class Api {
     return result;
   }
 
+  public static async editSnapshot(
+    id: number,
+    note?: string | null
+  ): Promise<Result<"ok">> {
+    const data: any = {};
+    data["note"] = note;
+    const result = await this.requestApi(
+      "snapshot/" + String(id),
+      "post",
+      true,
+      data
+    );
+    if (result.ok) {
+      result.ok = "ok";
+    }
+    return result;
+  }
+
   public static async uploadSnapshot(
     timestamp: Date,
-    uploadToken: string
+    uploadToken: string,
+    note?: string | null
   ): Promise<Result<SnapshotUploadResult>> {
     const data: any = {};
     data["timestamp"] = timestamp;
+    data["note"] = note;
     data["upload_token"] = uploadToken;
     const result = await this.requestApi("snapshot", "post", true, data);
     if (result.ok) {
