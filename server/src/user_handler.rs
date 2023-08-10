@@ -369,6 +369,17 @@ async fn sso_wechat_qrcode(server_state: &rocket::State<ServerState>) -> APIResp
         .error_for_status()?
         .bytes()
         .await?;
+    let res_str = String::from_utf8(bytes.to_vec()).unwrap_or_default();
+    match serde_json::from_str::<serde_json::Value>(&res_str){
+        Ok(r) => {
+            println!("res:{}", &r);
+            return Ok((
+                Status::BadRequest,
+                json!({"error": "Unable to obtain qrcode"}),
+            ))
+        }
+        Err(err) => {  }
+    }
     Ok((
         Status::Ok,
         json!({"wechat_login_token": wechat_login_token, "img": format!("data:image/png;base64,{}",base64::encode(&bytes))}),
