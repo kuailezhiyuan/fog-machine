@@ -124,9 +124,7 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
   // are moving one layer at a time.
   while (pendingLayers.size > 0) {
     const nextLayers = new Map<string, SnapshotTile>();
-    const layerTiles = Array.from(pendingLayers.values()).sort((a, b) =>
-      compareSnapshotCoord(b.coord, a.coord)
-    );
+    const layerTiles = Array.from(pendingLayers.values());
 
     for (const tile of layerTiles) {
       if (
@@ -223,16 +221,6 @@ function emptySnapshotTile(coord: SnapshotCoord): SnapshotTile {
 
 function snapshotCoordKey(coord: SnapshotCoord): string {
   return `${coord.z}:${coord.y}:${coord.x}`;
-}
-
-function compareSnapshotCoord(a: SnapshotCoord, b: SnapshotCoord): number {
-  if (a.z !== b.z) {
-    return a.z - b.z;
-  }
-  if (a.y !== b.y) {
-    return a.y - b.y;
-  }
-  return a.x - b.x;
 }
 
 function parentCoord(coord: SnapshotCoord): SnapshotCoord {
