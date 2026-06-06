@@ -82,7 +82,7 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
     return null;
   }
 
-  const pendingLayers = new Map<string, SnapshotTile>();
+  let pendingLayers = new Map<string, SnapshotTile>();
   const tileIndex = new Uint8Array(FOW_SNAPSHOT_TILE_BITSET_SIZE);
   let totalAreaSquareMeters = 0;
 
@@ -120,40 +120,43 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
     pendingLayers.set(snapshotCoordKey(snapshotTile.coord), snapshotTile);
   }
 
+  // In the first iteration, everything has z = FOW_SNAPSHOT_BASE_TILE_Z and we
+  // are moving one layer at a time.
   while (pendingLayers.size > 0) {
-    const key = maxSnapshotCoordKey(pendingLayers);
-    const tile = pendingLayers.get(key);
-    if (!tile) {
-      break;
-    }
-    pendingLayers.delete(key);
+    const nextLayers = new Map<string, SnapshotTile>();
+    const layerTiles = Array.from(pendingLayers.values()).sort((a, b) =>
+      compareSnapshotCoord(b.coord, a.coord)
+    );
 
-    if (
-      tile.coord.z <= FOW_SNAPSHOT_MAX_LAYER_Z &&
-      tile.coord.z >= FOW_SNAPSHOT_MIN_LAYER_Z &&
-      tile.blocks.size !== 0
-    ) {
-      const filename = fowSnapshotFilename(
-        tile.coord.x,
-        tile.coord.y,
-        tile.coord.z,
-        "layer"
-      );
-      zip.file(`Model/~/${filename}`, serializeLayerTile(tile), {
-        compression: "STORE",
-      });
+    for (const tile of layerTiles) {
+      if (
+        tile.coord.z <= FOW_SNAPSHOT_MAX_LAYER_Z &&
+        tile.coord.z >= FOW_SNAPSHOT_MIN_LAYER_Z &&
+        tile.blocks.size !== 0
+      ) {
+        const filename = fowSnapshotFilename(
+          tile.coord.x,
+          tile.coord.y,
+          tile.coord.z,
+          "layer"
+        );
+        zip.file(`Model/~/${filename}`, serializeLayerTile(tile), {
+          compression: "STORE",
+        });
+      }
+
+      if (tile.coord.z <= FOW_SNAPSHOT_MIN_LAYER_Z) {
+        continue;
+      }
+
+      const parent = parentCoord(tile.coord);
+      const parentKey = snapshotCoordKey(parent);
+      const parentTile = nextLayers.get(parentKey) ?? emptySnapshotTile(parent);
+      mergeSubtile(parentTile, tile);
+      nextLayers.set(parentKey, parentTile);
     }
 
-    if (tile.coord.z <= FOW_SNAPSHOT_MIN_LAYER_Z) {
-      break;
-    }
-
-    const parent = parentCoord(tile.coord);
-    const parentKey = snapshotCoordKey(parent);
-    const parentTile =
-      pendingLayers.get(parentKey) ?? emptySnapshotTile(parent);
-    mergeSubtile(parentTile, tile);
-    pendingLayers.set(parentKey, parentTile);
+    pendingLayers = nextLayers;
   }
 
   zip.file(
@@ -222,11 +225,6 @@ function snapshotCoordKey(coord: SnapshotCoord): string {
   return `${coord.z}:${coord.y}:${coord.x}`;
 }
 
-function parseSnapshotCoordKey(key: string): SnapshotCoord {
-  const [z, y, x] = key.split(":").map((value) => Number.parseInt(value, 10));
-  return { x, y, z };
-}
-
 function compareSnapshotCoord(a: SnapshotCoord, b: SnapshotCoord): number {
   if (a.z !== b.z) {
     return a.z - b.z;
@@ -235,12 +233,6 @@ function compareSnapshotCoord(a: SnapshotCoord, b: SnapshotCoord): number {
     return a.y - b.y;
   }
   return a.x - b.x;
-}
-
-function maxSnapshotCoordKey(tiles: Map<string, SnapshotTile>): string {
-  return Array.from(tiles.keys()).sort((a, b) =>
-    compareSnapshotCoord(parseSnapshotCoordKey(b), parseSnapshotCoordKey(a))
-  )[0];
 }
 
 function parentCoord(coord: SnapshotCoord): SnapshotCoord {
