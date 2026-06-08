@@ -112,9 +112,11 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
 
     zip.file(`Model/*/${bitmapFilename}`, serializeBitmapTile(snapshotTile), {
       compression: "STORE",
+      createFolders: false,
     });
     zip.file(`Model/#/${hashFilename}`, serializeHashTile(snapshotTile), {
       compression: "STORE",
+      createFolders: false,
     });
 
     pendingLayers.set(snapshotCoordKey(snapshotTile.coord), snapshotTile);
@@ -140,6 +142,7 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
         );
         zip.file(`Model/~/${filename}`, serializeLayerTile(tile), {
           compression: "STORE",
+          createFolders: false,
         });
       }
 
@@ -160,12 +163,12 @@ export async function exportFwss(fogMap: FogMap): Promise<Blob | null> {
   zip.file(
     `Model/#/${FOW_SNAPSHOT_METADATA_FILENAME}`,
     snapshotMetadata(totalAreaSquareMeters),
-    { compression: "STORE" }
+    { compression: "STORE", createFolders: false }
   );
   zip.file(
     `Model/#/${FOW_SNAPSHOT_TILE_INDEX_FILENAME}`,
     pako.deflate(tileIndex),
-    { compression: "STORE" }
+    { compression: "STORE", createFolders: false }
   );
 
   return zip.generateAsync({ type: "blob", compression: "STORE" });

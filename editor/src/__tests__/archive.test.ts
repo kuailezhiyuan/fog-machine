@@ -80,6 +80,7 @@ test("fwss archive roundtrip", async () => {
   const zip = await new JSZip().loadAsync(data);
   const names = Object.keys(zip.files);
 
+  expect(Object.values(zip.files).some((file) => file.dir)).toBe(false);
   expect(names.some((name) => name.startsWith("Model/*/"))).toBe(true);
   expect(names.some((name) => name.startsWith("Model/#/"))).toBe(true);
   expect(names.some((name) => name.startsWith("Model/~/"))).toBe(true);
